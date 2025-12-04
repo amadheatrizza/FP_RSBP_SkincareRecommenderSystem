@@ -37,7 +37,16 @@ with st.sidebar:
     
     st.subheader("3. Preferences")
     p_type = st.selectbox("Product Type", engine.get_product_types())
-    max_price = st.slider("Max Price (IDR)", 50000, 2000000, 500000)
+    price_options = {
+        "≤ Rp100.000 (Budget)": 100000,
+        "≤ Rp200.000 (Affordable)": 200000,
+        "≤ Rp500.000 (Mid-Range)": 500000,
+        "≤ Rp1.000.000 (Premium)": 1000000,
+        "≤ Rp2.000.000 (Luxury)": 2000000
+    }
+
+    label = st.selectbox("Max Price (IDR)", list(price_options.keys()))
+    max_price = price_options[label]
 
 # --- MAIN ---
 st.title("🧬 GlowUp: Knowledge-Based Skincare System")
