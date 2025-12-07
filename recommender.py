@@ -1,118 +1,115 @@
 import pandas as pd
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from knowledge_base import INGREDIENT_KNOWLEDGE, SENSITIVE_AVOID, get_explanation_template
+import ast
+from knowledge_base import KnowledgeBase
 
 class SkincareRecommender:
-    def __init__(self, data_path):
-        self.df = pd.read_csv(data_path, sep=';', encoding='latin-1')
-        self._preprocess_data()
-        self._build_hybrid_engine()
+    def __init__(self, product_path='skincare_products_with_images.csv', ingredient_path='ingredientsList.csv'):
+        self.kb = KnowledgeBase(ingredient_path)
+        
+        # Load products (fallback to clean if images not scraped yet)
+        try:
+            self.df = pd.read_csv(product_path)
+        except FileNotFoundError:
+            self.df = pd.read_csv('skincare_products_clean.csv')
 
-    def _preprocess_data(self):
+        self._preprocess()
+
+    def _preprocess(self):
         # 1. Clean Price
-        def clean_price(price_str):
-            if pd.isna(price_str): return 0
-            clean_str = str(price_str).replace('Rp', '').replace('.', '').strip()
-            if ',' in clean_str: clean_str = clean_str.split(',')[0]
-            try: return float(clean_str)
-            except: return 0
+        def clean_price(p):
+            try:
+                if pd.isna(p): return 0.0
+                return float(str(p).replace('£', '').strip())
+            except:
+                return 0.0
         
         self.df['price_cleaned'] = self.df['price'].apply(clean_price)
         
         # 2. Fill NaNs
-        skin_cols = ['Sensitive', 'Combination', 'Oily', 'Dry', 'Normal']
-        self.df[skin_cols] = self.df[skin_cols].fillna(0).astype(int)
-        self.df['notable_effects'] = self.df['notable_effects'].fillna('')
-        self.df['description'] = self.df['description'].fillna('')
         self.df['product_type'] = self.df['product_type'].fillna('Other')
-        
-        # 3. COMBINE Text for Searching
-        # We search in both 'notable_effects' and 'description' to find ingredients
-        self.df['full_text'] = (self.df['notable_effects'] + " " + self.df['description']).str.lower()
+        self.df['clean_ingreds'] = self.df['clean_ingreds'].fillna("[]")
+        if 'image_url' not in self.df.columns:
+            self.df['image_url'] = None
 
-    def _build_hybrid_engine(self):
-        # We keep TF-IDF as a "fallback" or "context" layer
-        self.tfidf = TfidfVectorizer(stop_words='english')
-        self.tfidf_matrix = self.tfidf.fit_transform(self.df['notable_effects'])
+    def get_product_types(self):
+        return ['All'] + sorted(self.df['product_type'].astype(str).unique().tolist())
 
-    def inference(self, skin_type, concern, product_type=None, min_price=0, max_price=10000000):
-        """
-        The Core Inference Engine (Knowledge-Based + Rule-Based)
-        """
-        # --- PHASE 1: HARD CONSTRAINTS (Rules) ---
-        mask = (self.df['price_cleaned'] >= min_price) & (self.df['price_cleaned'] <= max_price)
-        
-        if skin_type in ['Sensitive', 'Combination', 'Oily', 'Dry', 'Normal']:
-            mask = mask & (self.df[skin_type] == 1)
-            
-        if product_type and product_type != "All":
+    def get_concerns(self):
+        return self.kb.get_concerns()
+
+    def inference(self, skin_type, selected_concerns, product_type, max_price):
+        # 1. Filter Candidates
+        mask = (self.df['price_cleaned'] <= max_price)
+        if product_type != 'All':
             mask = mask & (self.df['product_type'] == product_type)
             
         candidates = self.df[mask].copy()
         
-        if candidates.empty:
-            return pd.DataFrame()
-
-        # --- PHASE 2: KNOWLEDGE-BASED SCORING (The "Reasoning") ---
-        
-        # Get target ingredients for the user's concern
-        # Default to 'Hydration' if concern not found in KB, or do keyword search
-        target_ingredients = []
-        for key, ingredients in INGREDIENT_KNOWLEDGE.items():
-            if key.lower() in concern.lower():
-                target_ingredients.extend(ingredients)
-        
-        # If no specific KB match, use the raw concern string for text search
-        if not target_ingredients:
-            target_ingredients = [concern.lower()]
-
-        # Initialize Scoring and Explanation
         scores = []
         explanations = []
 
+        # 2. Score Candidates
         for index, row in candidates.iterrows():
             score = 0
-            reasons = []
-            text_data = row['full_text']
+            explanation_html = ""
             
-            # RULE 1: Efficacy (Does it contain the ingredient?)
-            found_ingredients = [ing for ing in target_ingredients if ing in text_data]
-            if found_ingredients:
-                score += 10 * len(found_ingredients)
-                # Create Explanation
-                top_ing = found_ingredients[0] # Pick the first one for brevity
-                reasons.append(get_explanation_template(concern, top_ing))
-            
-            # RULE 2: Safety (Sensitive Skin Logic)
-            if skin_type == 'Sensitive':
-                bad_ingredients = [bad for bad in SENSITIVE_AVOID if bad in text_data]
-                if bad_ingredients:
-                    score -= 50 # Heavy penalty
-                    reasons.append(f"Warning: Contains {bad_ingredients[0]} which might irritate sensitive skin.")
-                else:
-                    score += 5 # Bonus for being "safe"
-                    reasons.append("Safe for Sensitive Skin (No common irritants detected).")
+            # Parse ingredient string
+            try:
+                ing_list = ast.literal_eval(row['clean_ingreds'])
+            except:
+                ing_list = []
 
-            # RULE 3: Fallback Similarity (TF-IDF)
-            # We add a small fraction of the cosine similarity to break ties
-            # (Simplified here for speed, usually calculated in bulk)
+            found_benefits = []
+            found_risks = []
             
-            if not reasons:
-                reasons.append("Matches your skin type criteria.")
+            # CHECK INGREDIENTS
+            for ing in ing_list:
+                info = self.kb.get_ingredient_info(ing)
+                if info:
+                    # A. EFFICACY: Loop through ALL selected concerns
+                    # If an ingredient helps multiple concerns, it gets points for EACH.
+                    for concern in selected_concerns:
+                        if self.kb.check_concern_match(info, concern):
+                            score += 10
+                            desc = info.get('what_does_it_do', 'Beneficial ingredient')
+                            short_desc = (desc[:60] + '..') if len(desc) > 60 else desc
+                            
+                            # Avoid duplicate text lines for the same ingredient
+                            entry = f"<b>{ing.title()}</b>: {short_desc}"
+                            if entry not in found_benefits:
+                                found_benefits.append(entry)
+
+                    # B. SAFETY: Check Skin Type Risks
+                    if self.kb.check_skin_type_risk(info, skin_type):
+                        score -= 20 # Penalty
+                        if ing not in found_risks:
+                            found_risks.append(f"<b>{ing.title()}</b> (Avoid for {skin_type})")
+
+            # 3. Build Explainable Output
+            if found_benefits:
+                # Show top 3 benefits
+                items_html = "".join([f"<li>{item}</li>" for item in found_benefits[:3]])
+                explanation_html += f"<p style='color:#2E7D32; margin:0;'>✅ <b>Matches Concerns:</b><ul>{items_html}</ul></p>"
+            else:
+                explanation_html += "<p style='color:grey; margin:0;'>ℹ️ No specific actives found.</p>"
+
+            if found_risks:
+                items_html = ", ".join(found_risks[:2])
+                explanation_html += f"<p style='color:#C62828; margin-top:5px;'>⚠️ <b>Risks:</b> Contains {items_html}</p>"
+
+            # Sensitive Skin Bonus
+            if skin_type == 'Sensitive' and not found_risks:
+                score += 5
+                explanation_html += "<p style='color:#1565C0; font-size:0.9em'>🛡️ <b>Safe:</b> No irritants found.</p>"
 
             scores.append(score)
-            explanations.append(" ".join(reasons))
+            explanations.append(explanation_html)
 
-        candidates['expert_score'] = scores
-        candidates['explanation'] = explanations
+        # 4. Normalize Score (Cap at 100%)
+        # We allow score to be negative (bad match) or >100 internally, but cap for display
+        candidates['raw_score'] = scores
+        candidates['final_score'] = [max(0, min(100, s)) for s in scores]
+        candidates['explanation_html'] = explanations
 
-        # --- PHASE 3: RANKING ---
-        # Sort by Expert Score first
-        recommendations = candidates.sort_values(by='expert_score', ascending=False).head(5)
-        
-        return recommendations[['product_name', 'brand', 'price_cleaned', 'product_type', 'description', 'explanation', 'picture_src', 'expert_score']]
-
-    def get_product_types(self):
-        return ['All'] + sorted(self.df['product_type'].unique().tolist())  
+        # Return Top 5 Matches
+        return candidates.sort_values(by='final_score', ascending=False).head(5)

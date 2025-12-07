@@ -1,112 +1,48 @@
-# --- KNOWLEDGE ONTOLOGY ---
-KNOWLEDGE_BASE = {
-    "Acne": {
-        "actives": [
-            "salicylic acid", "benzoyl peroxide", "tea tree", "retinol", 
-            "niacinamide", "sulfur", "clay", "charcoal", "kaolin", 
-            "bentonite", "aha", "bha", "succinic acid", "centella"
-        ],
-        "explanation": "Contains {}, which targets acne bacteria, unclogs pores, and reduces inflammation."
-    },
-    "Anti-Aging": {
-        "actives": [
-            "retinol", "retinyl", "bakuchiol", "peptide", "ceramide", 
-            "vitamin c", "hyaluronic acid", "collagen", "glycolic acid", 
-            "lactic acid", "adenosine", "ginseng", "resveratrol", "q10"
-        ],
-        "explanation": "Contains {}, proven to stimulate collagen, reduce fine lines, and improve skin elasticity."
-    },
-    "Brightening": {
-        "actives": [
-            "vitamin c", "niacinamide", "alpha arbutin", "kojic acid", 
-            "licorice", "azelaic acid", "tranexamic acid", "glycolic acid", 
-            "glutathione", "galactomyces", "rice extract", "papaya"
-        ],
-        "explanation": "Contains {}, which inhibits melanin production to fade dark spots and brighten skin tone."
-    },
-    "Hydration": {
-        "actives": [
-            "hyaluronic acid", "sodium hyaluronate", "glycerin", "ceramide", 
-            "squalane", "panthenol", "vitamin b5", "aloe vera", 
-            "snail mucin", "betaine", "allantoin", "polyglutamic acid"
-        ],
-        "explanation": "Contains {}, a humectant/emollient that draws moisture into the skin and repairs the barrier."
-    },
-    "Redness & Soothing": {
-        "actives": [
-            "centella", "cica", "mugwort", "aloe vera", "green tea", 
-            "chamomile", "calendula", "oat", "panthenol", "allantoin", 
-            "heartleaf", "propolis"
-        ],
-        "explanation": "Contains {}, known for its anti-inflammatory properties to calm redness and irritation."
-    },
-    "Pore Care": {
-        "actives": [
-            "niacinamide", "salicylic acid", "bha", "witch hazel", 
-            "clay", "charcoal", "green tea"
-        ],
-        "explanation": "Contains {}, which regulates oil production and tightens the appearance of pores."
-    }
-}
+import pandas as pd
+import ast
 
-#CONSTRAINT RULES (SAFETY)
-SAFETY_RULES = {
-    "Sensitive": {
-        "avoid": [
-            "alcohol denat", "ethanol", "fragrance", "parfum", 
-            "essential oil", "sodium lauryl sulfate", "sls", "menthol"
-        ],
-        "penalty_msg": "⚠️ Risk: Contains {}, a potential irritant for sensitive skin."
-    },
-    "Dry": {
-        "avoid": ["alcohol denat", "ethanol", "clay", "charcoal"],
-        "penalty_msg": "⚠️ Caution: Contains {}, which can be drying."
-    },
-    "Oily": {
-        "avoid": ["mineral oil", "coconut oil", "shea butter", "beeswax", "lanolin"],
-        "penalty_msg": "⚠️ Note: Contains {}, which is potentially heavy/comedogenic for oily skin."
-    }
-}
-
-def analyze_product(text, concern, skin_type):
-    text_lower = text.lower()
-    score = 0
-    reasons = []
-
-    # 1. CHECK EFFICACY (Forward Chaining)
-    # Does the product contain ingredients that solve the user's concern?
-    
-    if concern in KNOWLEDGE_BASE:
-        knowledge = KNOWLEDGE_BASE[concern]
-        found_actives = [ing for ing in knowledge['actives'] if ing in text_lower]
+class KnowledgeBase:
+    def __init__(self, ingredient_path='ingredientsList.csv'):
+        # Load ingredients
+        self.df = pd.read_csv(ingredient_path)
         
-        if found_actives:
-            # Found primary solution
-            top_active = found_actives[0] # Take the first one found
-            reasons.append(f"✅ {knowledge['explanation'].format(top_active.title())}")
-            score += 10 + (len(found_actives) * 2) # Base 10 + bonus for multiple actives
-        else:
-            # Fallback: No specific active found
-            score += 1
-            reasons.append("ℹ️ Matches product category, but key active ingredients weren't explicitly listed.")
-    else:
-        # Fallback for custom text inputs
-        reasons.append("ℹ️ General product recommendation.")
+        # Create a lookup dictionary: Name (lowercase) -> Row Data
+        self.ing_map = {}
+        for _, row in self.df.iterrows():
+            if pd.notna(row['name']):
+                self.ing_map[row['name'].strip().lower()] = row.to_dict()
 
-    # 2. CHECK SAFETY (Constraint Satisfaction)
-    # Does the product contain things the user MUST avoid?
-    if skin_type in SAFETY_RULES:
-        rule = SAFETY_RULES[skin_type]
-        found_bad = [bad for bad in rule['avoid'] if bad in text_lower]
-        
-        if found_bad:
-            # VIOLATION FOUND
-            bad_ing = found_bad[0]
-            reasons.append(rule['penalty_msg'].format(bad_ing.title()))
-            score -= 30 # Massive penalty
-        else:
-            if skin_type == 'Sensitive':
-                reasons.append("🛡️ Safe: Free from common irritants (Alcohol/Fragrance).")
-                score += 5
+    def get_ingredient_info(self, name):
+        """Get details for a specific ingredient name."""
+        return self.ing_map.get(str(name).strip().lower())
 
-    return score, reasons
+    def get_concerns(self):
+        """Extract all unique concerns from the 'who_is_it_good_for' column."""
+        unique_concerns = set()
+        for items in self.df['who_is_it_good_for']:
+            try:
+                # Parse string list "['Acne', 'Redness']" -> List
+                valid_list = ast.literal_eval(items)
+                for i in valid_list:
+                    if i.strip(): unique_concerns.add(i.strip())
+            except:
+                continue
+        return sorted(list(unique_concerns))
+
+    def check_concern_match(self, ingredient_data, target_concern):
+        """Check if an ingredient is good for a specific concern."""
+        try:
+            good_for = ast.literal_eval(ingredient_data.get('who_is_it_good_for', "[]"))
+            # Case insensitive check
+            return any(target_concern.lower() == item.strip().lower() for item in good_for)
+        except:
+            return False
+
+    def check_skin_type_risk(self, ingredient_data, skin_type):
+        """Check if an ingredient should be avoided for a skin type."""
+        try:
+            avoid_list = ast.literal_eval(ingredient_data.get('who_should_avoid', "[]"))
+            # Check if skin type is in the avoid list (e.g., 'Sensitive' in ['Sensitive', 'Oily'])
+            return any(skin_type.lower() == item.strip().lower() for item in avoid_list)
+        except:
+            return False
