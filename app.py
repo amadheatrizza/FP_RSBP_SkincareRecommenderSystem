@@ -3,83 +3,99 @@ import pandas as pd
 from recommender import SkincareRecommender
 
 # --- CONFIG ---
-st.set_page_config(page_title="GlowUp Expert System", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="Expert Skincare System", layout="wide")
 
+# Custom CSS for XAI Boxes
 st.markdown("""
 <style>
-    .stAlert { padding: 10px; border-radius: 10px; }
-    .score-badge { 
-        background-color: #4CAF50; color: white; padding: 5px 10px; 
-        border-radius: 15px; font-weight: bold; font-size: 14px;
+    .xai-box {
+        background-color: #000000; 
+        border-left: 5px solid #2196F3;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 10px;
+        font-family: sans-serif;
+        color: white;
+    }
+    .score-tag {
+        background-color: #4CAF50;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.8em;
+        font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- INIT ---
+# --- INITIALIZE SYSTEM ---
 @st.cache_resource
-def load_engine():
+def load_system():
     return SkincareRecommender('export_skincare.csv')
 
-engine = load_engine()
+recommender = load_system()
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("🧬 User Diagnostics")
-    name = st.text_input("Name", "User")
-    
-    st.subheader("1. Skin Profile")
-    skin_type = st.selectbox("Skin Type", ['Normal', 'Dry', 'Oily', 'Combination', 'Sensitive'])
-    
-    st.subheader("2. Concerns")
-    # We map the UI options to our Knowledge Base keys for better accuracy
-    concern_options = ["Acne", "Brightening", "Anti-Aging", "Hydration", "Soothing", "General Care"]
-    concern = st.selectbox("Primary Concern", concern_options)
-    
-    st.subheader("3. Preferences")
-    p_type = st.selectbox("Product Type", engine.get_product_types())
-    max_price = st.slider("Max Price (IDR)", 50000, 2000000, 500000)
+# --- SIDEBAR: FACTS COLLECTION ---
+st.sidebar.title("Skincare Expert System")
+st.sidebar.info("A Rule-Based Inference System based on dermatology ingredient knowledge.")
 
-# --- MAIN ---
-st.title("🧬 GlowUp: Knowledge-Based Skincare System")
-st.write(f"Hello **{name}**. Running inference engine for **{skin_type}** skin targeting **{concern}**...")
+st.sidebar.header("User Profile")
+name = st.sidebar.text_input("Name", "User")
+skin_type = st.sidebar.selectbox("Skin Type", ['Normal', 'Dry', 'Oily', 'Combination', 'Sensitive'])
+concern = st.sidebar.selectbox("Primary Concern", recommender.get_concerns())
 
-if st.button("Generate Recommendations"):
-    with st.spinner("Applying Knowledge Base rules... Parsing Ingredients..."):
-        results = engine.inference(
+st.sidebar.header("Constraints")
+p_type = st.sidebar.selectbox("Product Category", recommender.get_product_types())
+max_p = st.sidebar.slider("Max Budget (IDR)", 50000, 2000000, 300000)
+
+# --- MAIN INFERENCE UI ---
+st.title(f"Skin Diagnosis for: {name}")
+st.write(f"Looking for **{p_type}** to treat **{concern}** for **{skin_type}** skin.")
+
+if st.sidebar.button("Run Inference Engine"):
+    with st.spinner("Consulting Knowledge Base..."):
+        # CALL THE INFERENCE ENGINE
+        results = recommender.inference(
             skin_type=skin_type,
             concern=concern,
             product_type=p_type,
-            max_price=max_price
+            max_price=max_p
         )
-
+    
     if not results.empty:
-        st.success(f"Analysis Complete. Found {len(results)} matches based on ingredient logic.")
+        st.success(f"Inference Successful. Found {len(results)} highly recommended products.")
         
-        for i, row in results.iterrows():
+        for idx, row in results.iterrows():
             with st.container():
-                # Card Layout
-                c1, c2 = st.columns([1, 4])
+                col1, col2 = st.columns([1, 3])
                 
-                with c1:
+                with col1:
                     if pd.notna(row['picture_src']):
-                        st.image(row['picture_src'], use_container_width=True)
+                        st.image(row['picture_src'], width=150)
                     else:
-                        st.text("No Image")
+                        st.write("No Image")
                 
-                with c2:
-                    # Header with Score
-                    st.markdown(f"### {row['product_name']} <span class='score-badge'>Score: {row['expert_score']}</span>", unsafe_allow_html=True)
-                    st.caption(f"**{row['brand']}** | {row['product_type']} | Rp {row['price_cleaned']:,.0f}")
+                with col2:
+                    # Product Header
+                    st.markdown(f"### {row['product_name']} <span class='score-tag'>{int(row['final_score'])} pts</span>", unsafe_allow_html=True)
+                    st.caption(f"{row['brand']} | {row['product_type']} | Rp {row['price_cleaned']:,.0f}")
                     
-                    # XAI SECTION (The Explainable AI part)
-                    st.info(f"**💡 Why this is recommended:**\n\n{row['explanation']}")
+                    # XAI: EXPLANATION BOX
+                    # This displays the "Why" generated by knowledge_base.py
+                    st.markdown(f"""
+                    <div class="xai-box">
+                        <b>Explanation:</b><br>
+                        {row['explanation_html']}
+                    </div>
+                    """, unsafe_allow_html=True)
                     
-                    with st.expander("View Product Details"):
+                    with st.expander("Product Details"):
+                        st.write(row['notable_effects'])
                         st.write(row['description'])
                 
-                st.markdown("---")
+                st.divider()
     else:
-        st.warning("No products met the strict criteria. Try increasing the price range or changing the product type.")
+        st.error("No products found matching these strict rules. Try increasing your budget or changing the product category.")
 
 else:
-    st.info("Awaiting input data to run the Knowledge Inference Engine.")
+    st.info("Please set your parameters in the sidebar and click 'Run Inference Engine'.")
