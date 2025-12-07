@@ -71,11 +71,25 @@ class SkincareRecommender:
                     for concern in selected_concerns:
                         if self.kb.check_concern_match(info, concern):
                             score += 10
-                            desc = info.get('what_does_it_do', 'Beneficial ingredient')
-                            short_desc = (desc[:60] + '..') if len(desc) > 60 else desc
-                            
-                            # Avoid duplicate text lines for the same ingredient
-                            entry = f"<b>{ing.title()}</b>: {short_desc}"
+                            desc = info.get("what_does_it_do", "Beneficial ingredient")
+
+                            # Extract bullet points
+                            lines = desc.split("\n")
+                            bullets = [line[1:].strip() for line in lines if line.strip().startswith("-")]
+
+                            # Build UL items
+                            ul_html = "".join([f"<li>{b}</li>" for b in bullets])
+
+                            # Final formatted output
+                            entry = f"""
+                            <div style="margin-bottom:10px;">
+                            <p style="margin:0;"><b>{ing.title()}</b> offers benefits such as:</p>
+                            <ul style="margin-top:4px;">
+                                {ul_html}
+                            </ul>
+                            </div>
+                            """
+
                             if entry not in found_benefits:
                                 found_benefits.append(entry)
 
