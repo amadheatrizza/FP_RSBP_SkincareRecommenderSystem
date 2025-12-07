@@ -95,7 +95,8 @@ if st.sidebar.button("Get Recommendations"):
                         st.markdown(f"### {row['product_name']} <span class='match-score'>{int(row['final_score'])}% Match</span>", unsafe_allow_html=True)
                         st.markdown(f"<span class='price-tag'>£{row['price_cleaned']:.2f}</span>", unsafe_allow_html=True)
                         st.markdown("---")
-                        st.markdown(row['explanation_html'], unsafe_allow_html=True)
+                        with st.expander("Matches Concerns"):
+                            st.markdown(row['explanation_html'], unsafe_allow_html=True)
                         
                         with st.expander("Full Ingredient List"):
                             ing_clean = str(row['clean_ingreds']).replace('[','').replace(']','').replace("'", "")

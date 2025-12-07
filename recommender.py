@@ -77,6 +77,13 @@ class SkincareRecommender:
                             lines = desc.split("\n")
                             bullets = [line[1:].strip() for line in lines if line.strip().startswith("-")]
 
+                            if not bullets:
+                                cleaned = desc.replace(f"{ing.lower()} offers benefits such as:", "").strip()
+                                cleaned = cleaned.replace(f"{ing.title()} offers benefits such as:", "").strip()
+                                
+                                sentences = [s.strip() for s in cleaned.split(".") if s.strip()]
+                                bullets = sentences  # Each sentence becomes a bullet
+
                             # Build UL items
                             ul_html = "".join([f"<li>{b}</li>" for b in bullets])
 
@@ -89,7 +96,7 @@ class SkincareRecommender:
                             </ul>
                             </div>
                             """
-
+                            
                             if entry not in found_benefits:
                                 found_benefits.append(entry)
 
@@ -103,7 +110,7 @@ class SkincareRecommender:
             if found_benefits:
                 # Show top 3 benefits
                 items_html = "".join([f"<li>{item}</li>" for item in found_benefits[:3]])
-                explanation_html += f"<p style='color:#2E7D32; margin:0;'>✅ <b>Matches Concerns:</b><ul>{items_html}</ul></p>"
+                explanation_html += f"<ul>{items_html}</ul>"
             else:
                 explanation_html += "<p style='color:grey; margin:0;'>ℹ️ No specific actives found.</p>"
 
