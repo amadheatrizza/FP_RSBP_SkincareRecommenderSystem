@@ -1,4 +1,3 @@
-
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -6,61 +5,124 @@ import time
 import random
 import re
 
-def scrape_bing():
-    input_file = 'skincare_products_clean.csv'
-    output_file = 'skincare_products_with_images.csv'
-    
-    print(f"Loading {input_file}...")
+INPUT_FILE = "skincare_products_clean.csv"
+OUTPUT_FILE = "skincare_products_with_images.csv"
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
+
+# ============================================================
+# SCRAPE IMAGE FROM LOOKFANTASTIC PRODUCT PAGE
+# ============================================================
+def scrape_lookfantastic_image(product_url):
     try:
-        df = pd.read_csv(input_file)
-    except FileNotFoundError:
-        print(f"Error: {input_file} not found.")
-        return
+        r = requests.get(product_url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-    if 'image_url' not in df.columns:
-        df['image_url'] = None
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+        # LookFantastic usually stores main image in og:image
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            return og_image["content"]
 
-    print(f"Found {len(df)} products. Starting Bing Search...")
+        # Fallback: search image tag
+        img = soup.find("img", {"itemprop": "image"})
+        if img and img.get("src"):
+            return img["src"]
+
+    except Exception:
+        pass
+
+    return None
+
+
+# ============================================================
+# SCRAPE IMAGE FROM BING (REAL IMAGE, NOT THUMBNAIL)
+# ============================================================
+def scrape_bing_image(product_name):
+    clean_name = re.sub(r"[^\w\s]", "", product_name)
+    search_terms = " ".join(clean_name.split()[:7])
+    query = f"{search_terms} official product packaging skincare"
+
+    url = f"https://www.bing.com/images/search?q={query.replace(' ', '+')}"
+
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        results = soup.find_all("a", class_="iusc")
+
+        for item in results:
+            meta = item.get("m")
+            if not meta:
+                continue
+
+            meta = re.sub(r"&quot;", '"', meta)
+            match = re.search(r'"murl":"(.*?)"', meta)
+
+            if match:
+                image_url = match.group(1)
+                if image_url.startswith("http"):
+                    return image_url
+
+    except Exception:
+        pass
+
+    return None
+
+
+# ============================================================
+# MAIN PROCESS
+# ============================================================
+def main():
+    print("📦 Loading CSV...")
+    df = pd.read_csv(INPUT_FILE)
+
+    if "image_url" not in df.columns:
+        df["image_url"] = None
+
+    total = len(df)
+    print(f"🔍 Found {total} products")
 
     for index, row in df.iterrows():
-        if pd.notna(row['image_url']) and str(row['image_url']).startswith('http'):
+        if pd.notna(row["image_url"]) and str(row["image_url"]).startswith("http"):
             continue
 
-        # IMPROVED QUERY
-        # Remove weird symbols from product name
-        clean_name = re.sub(r'[^\w\s]', '', str(row['product_name']))
-        # Limit to 6 words for search precision
-        search_terms = " ".join(clean_name.split()[:6])
-        
-        # Query: "The Ordinary Niacinamide" + "official product packaging"
-        query = f"{search_terms} skincare product official packaging white background".replace(' ', '+')
-        url = f"https://www.bing.com/images/search?q={query}&first=1"
-        
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            img = soup.find('img', class_='mimg')
-            
-            if img and img.get('src'):
-                df.at[index, 'image_url'] = img.get('src')
-                print(f"[{index+1}/{len(df)}] ✅ Match: {search_terms}...")
-            else:
-                print(f"[{index+1}/{len(df)}] ❌ No match found")
-                
-        except Exception as e:
-            print(f"[{index+1}] Error: {e}")
-            
-        time.sleep(random.uniform(0.5, 1.5))
+        product_name = str(row["product_name"])
+        product_url = str(row["product_url"])
 
-        if index % 20 == 0:
-            df.to_csv(output_file, index=False)
+        image_url = None
 
-    df.to_csv(output_file, index=False)
-    print("Done!")
+        print(f"[{index+1}/{total}] 🔹 {product_name}")
+
+        # 1️⃣ Try LookFantastic first
+        if product_url.startswith("http"):
+            image_url = scrape_lookfantastic_image(product_url)
+
+        # 2️⃣ Fallback to Bing
+        if not image_url:
+            image_url = scrape_bing_image(product_name)
+
+        if image_url:
+            df.at[index, "image_url"] = image_url
+            print("   ✅ Image found")
+        else:
+            print("   ❌ Image not found")
+
+        # Save progress every 10 items
+        if index % 10 == 0:
+            df.to_csv(OUTPUT_FILE, index=False)
+
+        time.sleep(random.uniform(1.0, 1.8))
+
+    df.to_csv(OUTPUT_FILE, index=False)
+    print("✅ DONE! Image scraping completed")
+
 
 if __name__ == "__main__":
-    scrape_bing()
+    main()
