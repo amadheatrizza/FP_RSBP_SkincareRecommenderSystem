@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from recommender import SkincareRecommender
 
-st.set_page_config(page_title="Skincare Recommender System", layout="wide")
+st.set_page_config(page_title="GloUp Skincare Recommender System", layout="wide")
 
 st.markdown("""
 <style>
@@ -65,7 +65,7 @@ with st.sidebar.expander("ℹ️ How the Score Works"):
     * The score is capped at **100%**.
     """)
 
-st.title("AI Skincare Recommender")
+st.title("✨GloUp Skincare Recommender")
 st.markdown(f"Finding the best **{p_type}** for **{skin_type}** skin.")
 
 if st.sidebar.button("Get Recommendations"):
