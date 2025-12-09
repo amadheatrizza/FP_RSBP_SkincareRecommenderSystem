@@ -16,21 +16,15 @@ HEADERS = {
     )
 }
 
-
-# ============================================================
-# SCRAPE IMAGE FROM LOOKFANTASTIC PRODUCT PAGE
-# ============================================================
 def scrape_lookfantastic_image(product_url):
     try:
         r = requests.get(product_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # LookFantastic usually stores main image in og:image
         og_image = soup.find("meta", property="og:image")
         if og_image and og_image.get("content"):
             return og_image["content"]
 
-        # Fallback: search image tag
         img = soup.find("img", {"itemprop": "image"})
         if img and img.get("src"):
             return img["src"]
@@ -40,10 +34,6 @@ def scrape_lookfantastic_image(product_url):
 
     return None
 
-
-# ============================================================
-# SCRAPE IMAGE FROM BING (REAL IMAGE, NOT THUMBNAIL)
-# ============================================================
 def scrape_bing_image(product_name):
     clean_name = re.sub(r"[^\w\s]", "", product_name)
     search_terms = " ".join(clean_name.split()[:7])
@@ -75,10 +65,6 @@ def scrape_bing_image(product_name):
 
     return None
 
-
-# ============================================================
-# MAIN PROCESS
-# ============================================================
 def main():
     print("📦 Loading CSV...")
     df = pd.read_csv(INPUT_FILE)
@@ -100,11 +86,9 @@ def main():
 
         print(f"[{index+1}/{total}] 🔹 {product_name}")
 
-        # 1️⃣ Try LookFantastic first
         if product_url.startswith("http"):
             image_url = scrape_lookfantastic_image(product_url)
 
-        # 2️⃣ Fallback to Bing
         if not image_url:
             image_url = scrape_bing_image(product_name)
 
@@ -114,7 +98,6 @@ def main():
         else:
             print("   ❌ Image not found")
 
-        # Save progress every 10 items
         if index % 10 == 0:
             df.to_csv(OUTPUT_FILE, index=False)
 
