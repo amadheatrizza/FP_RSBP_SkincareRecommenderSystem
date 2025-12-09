@@ -17,9 +17,6 @@ HEADERS = {
 }
 
 
-# ============================================================
-# SCRAPE IMAGE FROM LOOKFANTASTIC PRODUCT PAGE
-# ============================================================
 def scrape_lookfantastic_image(product_url):
     try:
         r = requests.get(product_url, headers=HEADERS, timeout=10)
@@ -41,9 +38,6 @@ def scrape_lookfantastic_image(product_url):
     return None
 
 
-# ============================================================
-# SCRAPE IMAGE FROM BING (REAL IMAGE, NOT THUMBNAIL)
-# ============================================================
 def scrape_bing_image(product_name):
     clean_name = re.sub(r"[^\w\s]", "", product_name)
     search_terms = " ".join(clean_name.split()[:7])
@@ -76,11 +70,9 @@ def scrape_bing_image(product_name):
     return None
 
 
-# ============================================================
-# MAIN PROCESS
-# ============================================================
+
 def main():
-    print("📦 Loading CSV...")
+    print("Loading CSV...")
     df = pd.read_csv(INPUT_FILE)
 
     if "image_url" not in df.columns:
@@ -110,9 +102,9 @@ def main():
 
         if image_url:
             df.at[index, "image_url"] = image_url
-            print("   ✅ Image found")
+            print("    Image found")
         else:
-            print("   ❌ Image not found")
+            print("    Image not found")
 
         # Save progress every 10 items
         if index % 10 == 0:
@@ -121,7 +113,7 @@ def main():
         time.sleep(random.uniform(1.0, 1.8))
 
     df.to_csv(OUTPUT_FILE, index=False)
-    print("✅ DONE! Image scraping completed")
+    print("Image scraping completed")
 
 
 if __name__ == "__main__":
