@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 from recommender import SkincareRecommender
 
-st.set_page_config(page_title="AI Skincare Expert", layout="wide")
+st.set_page_config(page_title="Skincare Recommender System", layout="wide")
 
-# CSS (from second version)
 st.markdown("""
 <style>
     .product-card {
@@ -45,12 +44,10 @@ def load_recommender():
 
 recommender = load_recommender()
 
-# --- SIDEBAR ---
 st.sidebar.header("Skin Profile")
 name = st.sidebar.text_input("Name", "User")
 skin_type = st.sidebar.selectbox("Skin Type", ['Dry', 'Oily', 'Combination', 'Sensitive', 'Normal'])
 
-# Multiselect for concerns (from second version)
 all_concerns = recommender.get_concerns()
 selected_concerns = st.sidebar.multiselect("Skin Concerns (Select all that apply)", all_concerns, default=[all_concerns[0]] if all_concerns else [])
 
@@ -59,7 +56,6 @@ st.sidebar.header("Filters")
 p_type = st.sidebar.selectbox("Product Type", recommender.get_product_types())
 max_price = st.sidebar.slider("Max Price (£)", 5.0, 100.0, 30.0)
 
-# --- HOW IT WORKS EXPANDER (from second version) ---
 with st.sidebar.expander("ℹ️ How the Score Works"):
     st.write("""
     **The Percentage Match is calculated based on ingredients:**
@@ -69,7 +65,6 @@ with st.sidebar.expander("ℹ️ How the Score Works"):
     * The score is capped at **100%**.
     """)
 
-# --- MAIN ---
 st.title("AI Skincare Recommender")
 st.markdown(f"Finding the best **{p_type}** for **{skin_type}** skin.")
 
@@ -78,7 +73,6 @@ if st.sidebar.button("Get Recommendations"):
         st.error("Please select at least one concern.")
     else:
         with st.spinner("Analyzing ingredients..."):
-            # Pass list of concerns
             results = recommender.inference(skin_type, selected_concerns, p_type, max_price)
         
         if not results.empty:
@@ -88,7 +82,6 @@ if st.sidebar.button("Get Recommendations"):
                     c1, c2 = st.columns([1, 4])
                     
                     with c1:
-                        # Image handling with fallback (from second version)
                         img_url = row['image_url'] if pd.notna(row['image_url']) else "https://via.placeholder.com/150?text=No+Image"
                         st.markdown(f'<img src="{img_url}" class="product-img">', unsafe_allow_html=True)
                     
@@ -97,13 +90,10 @@ if st.sidebar.button("Get Recommendations"):
                         st.markdown(f"<span class='price-tag'>£{row['price_cleaned']:.2f}</span>", unsafe_allow_html=True)
                         st.markdown("---")
                         
-                        # Expander for Matches Concerns (from second version)
                         with st.expander("Matches Concerns"):
                             st.markdown(row['explanation_html'], unsafe_allow_html=True)
                         
-                        # Expander for Full Ingredient List (from second version)
                         with st.expander("Full Ingredient List"):
-                            # Safely format ingredients
                             try:
                                 if isinstance(row['clean_ingreds'], str):
                                     ing_clean = str(row['clean_ingreds']).replace('[','').replace(']','').replace("'", "")
@@ -113,7 +103,6 @@ if st.sidebar.button("Get Recommendations"):
                                 ing_clean = str(row['clean_ingreds'])
                             st.caption(ing_clean)
                         
-                        # Buy Product button (error handling for URL)
                         try:
                             product_url = row.get('product_url', '')
                             if product_url and str(product_url).startswith('http'):
